@@ -224,7 +224,7 @@ def collect_stats(df, col):
         stats['occupancy'].append(len(group.index))
     return stats
 
-def run_voronoi_segmentation(parameters, use_roi=False):
+def run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False):
 
     # parameters
     oms = parameters['object_min_samples']
@@ -240,66 +240,60 @@ def run_voronoi_segmentation(parameters, use_roi=False):
             locs_path = os.path.join(input_dir, filename)
             basename = os.path.splitext(filename)[0]
             output_path = os.path.join(output_dir, basename+'_voronoi.xlsx')
-        else:
-            raise ValueError("This can only handle data from Thunderstorm at present")
 
-        roi_path = None
-        if use_roi:
-            roi_zip_path = os.path.join(input_dir, basename + '_roiset.zip')
-            roi_file_path = os.path.join(input_dir, basename + '_roiset.roi')
-            if os.path.exists(roi_zip_path):
-                roi_path = roi_zip_path
-            elif os.path.exists(roi_file_path):
-                roi_path = roi_file_path
-            else:
-                raise ValueError(("No ImageJ roi file exists -"
-                                 "you should put the file in the same directory"
-                                 "as the data"))
+            roi_path = None
+            if use_roi:
+                roi_zip_path = os.path.join(input_dir, basename + '_roiset.zip')
+                roi_file_path = os.path.join(input_dir, basename + '_roiset.roi')
+                if os.path.exists(roi_zip_path):
+                    roi_path = roi_zip_path
+                elif os.path.exists(roi_file_path):
+                    roi_path = roi_file_path
+                else:
+                    raise ValueError(("No ImageJ roi file exists -"
+                                     "you should put the file in the same directory"
+                                     "as the data"))
 
-        voronoi_clusters = voronoi_segmentation(locs_path,
-                                                roi_path=roi_path,
-                                                object_min_samples=oms,
-                                                cluster_density_factor=cdf,
-                                                cluster_min_samples=cms,
-                                                show_plot=True)
+            voronoi_clusters = voronoi_segmentation(locs_path,
+                                                    roi_path=roi_path,
+                                                    segment_rois=segment_rois,
+                                                    object_min_samples=oms,
+                                                    cluster_density_factor=cdf,
+                                                    cluster_min_samples=cms,
+                                                    show_plot=True)
 
-        for vc_id, vc in voronoi_clusters.items():
-            vdf = vc['locs']
-            object_locs_df = vdf[vdf['object_id'] != -1]
-            cluster_locs_df = vdf[vdf['cluster_id'] != -1]
+            for vc_id, vc in voronoi_clusters.items():
+                vdf = vc['locs']
+                object_locs_df = vdf[vdf['object_id'] != -1]
+                cluster_locs_df = vdf[vdf['cluster_id'] != -1]
 
-            object_stats = collect_stats(object_locs_df, 'object_id')
-            cluster_stats = collect_stats(object_locs_df, 'cluster_id')
+                object_stats = collect_stats(object_locs_df, 'object_id')
+                cluster_stats = collect_stats(object_locs_df, 'cluster_id')
 
-            object_stats_df = pd.DataFrame(object_stats)
-            cluster_stats_df = pd.DataFrame(cluster_stats)
-            writer = pd.ExcelWriter(output_path, engine='openpyxl')
-            if os.path.exists(output_path):
-                book = load_workbook(output_path)
-                writer.book = book
-                writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                object_stats_df = pd.DataFrame(object_stats)
+                cluster_stats_df = pd.DataFrame(cluster_stats)
+                writer = pd.ExcelWriter(output_path, engine='openpyxl')
+                if os.path.exists(output_path):
+                    book = load_workbook(output_path)
+                    writer.book = book
+                    writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
 
-            object_locs_df.to_excel(
-                writer,
-                sheet_name='{0} localisations'.format(vc_id),
-                index=False
-            )
-            object_stats_df.to_excel(
-                writer,
-                sheet_name='{0} voronoi stats'.format(vc_id),
-                index=False
-            )
-            cluster_locs_df.to_excel(
-                writer,
-                sheet_name='{0} localisations'.format(vc_id),
-                index=False
-            )
-            cluster_stats_df.to_excel(
-                writer,
-                sheet_name='{0} voronoi stats'.format(vc_id),
-                index=False
-            )
-            writer.save()
+                cluster_locs_df.to_excel(
+                    writer,
+                    sheet_name='{0} localisations'.format(vc_id),
+                    index=False
+                )
+                object_stats_df.to_excel(
+                    writer,
+                    sheet_name='{0} object stats'.format(vc_id),
+                    index=False
+                )
+                cluster_stats_df.to_excel(
+                    writer,
+                    sheet_name='{0} cluster stats'.format(vc_id),
+                    index=False
+                )
+                writer.save()
 
 if __name__=='__main__':
     parameters = {}
@@ -308,6 +302,6 @@ if __name__=='__main__':
     parameters['cluster_min_samples'] = 3
     parameters['cluster_density_factor'] = 20
     parameters['input_dir'] = 'C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\atto647 dstorm pre-hawk\\batch_test'
-    parameters['output_dir'] = 'C:\\Users\Daniel\\Documents\\Image processing\\Penny\\atto647 dstorm pre-hawk\\batch_test'
+    parameters['output_dir'] = 'C:\\Users\Daniel\\Documents\\Image processing\\Penny\\atto647 dstorm pre-hawk\\batch_test\\out'
     parameters['data_source'] = 'thunderstorm'
-    run_voronoi_segmentation(parameters)
+    run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)

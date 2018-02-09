@@ -294,7 +294,7 @@ def voronoi_segmentation(locs_path,
                          object_min_samples=3,
                          cluster_density_factor=20,
                          cluster_min_samples=3,
-                         num_rois=1,
+                         num_rois=5,
                          roi_size=7000.0,
                          show_plot=False):
     """
@@ -312,45 +312,38 @@ def voronoi_segmentation(locs_path,
 
     if roi_path:
         if roi_path.endswith('zip'):
-            rois = read_roi_zip(roi_path)
+            input_rois = read_roi_zip(roi_path)
         elif roi_path.endswith('roi'):
-            rois = read_roi_file(roi_path)
+            input_rois = read_roi_file(roi_path)
         else:
             raise ValueError(("No ImageJ roi file exists -"
                              "you should put the file in the same directory"
                              "as the data and make sure it has the same base"
                              "filename as the localisations."))
-
         # add the localisations to the rois dict
-        rois = roi_coords(locs, rois, pixel_size)
-        # use these same rois for the Monte Carlo
-        mc_rois = rois
+        mc_rois = roi_coords(locs, input_rois, pixel_size)
     else:
-        # use all the localisations but mimic the rois dict data structure
-        rois = {'image': {'locs': locs}}
-        # generate the rois at random positions for Monte Carlo
+        # generate a random set of rois
         mc_rois = random_rois(locs, num_rois, roi_size)
 
-    intersections = {}
+    # now run Monte Carlo on each roi
+    intersection = 0.0
     for roi_id, roi in mc_rois.items():
         print("Monte Carlo simulation in ROI {0}".format(roi_id))
         # pass the locs DataFrame and roi dict to voronoi_montecarlo
         rmc = voronoi_montecarlo(roi, show_plot=False)
-        intersections[roi_id] = rmc['intersection']
+        intersection += rmc['intersection']
+
+    # always use the average intersection
+    intersection /= float(len(mc_rois))
+    thresh = 1.0 / intersection
 
     if segment_rois:
-        # use the individual intersections rather than an average
-        for roi_id, roi in rois.items():
-            roi['intersection'] = intersections[roi_id]
-
-    else: # do the whole dataset
-        # get the intersections and calculate the average
-        ave_intersection = 0.0
-        for roi_id in intersections.keys():
-            ave_intersection += intersections[roi_id]
-
-        intersection = ave_intersection / float(len(rmc))
-        rois['image']['intersection'] = intersection
+        # use these same rois for the Monte Carlo
+        rois = mc_rois
+    else:
+        # use all the localisations but mimic the rois dict data structure
+        rois = {'image': {'locs': locs}}
 
     # now loop over the rois data structure
     clusters = {}
@@ -359,7 +352,6 @@ def voronoi_segmentation(locs_path,
         vor = build_voronoi(roi['locs'])
 
         # segment objects based on the result of the monte carlo simulation
-        thresh = 1.0 / roi['intersection']
         d = density(roi['locs'])
         density_factor = thresh / d
         print("density_factor: {}".format(density_factor))
@@ -375,7 +367,7 @@ def voronoi_segmentation(locs_path,
         data = {'voronoi': vor['voronoi'], 'locs': filtered}
 
         # set parameters and find clusters in objects
-        n_locs = len(locs.index)
+        n_locs = len(roi['locs'].index)
         clusters[roi_id] = voronoi_clustering(data,
                                               cluster_density_factor,
                                               cluster_min_samples,
@@ -613,14 +605,14 @@ def plot_cluster_polygons(locs, figure=None, cluster_column='lk'):
             locs[locs[cluster_column] == m].
             as_matrix(columns=['x [nm]', 'y [nm]'])
         )
-
         concave_hull, edge_points = (
-                alpha_shape(points, alpha=0.01))
-
-        patch = PolygonPatch(concave_hull, fc='#303F9F',
-                             ec='#000000', fill=True,
-                             zorder=-1)
-        ax.add_patch(patch)
+                alpha_shape(points, alpha=0.01)
+        )
+        if 'GeometryCollection' not in concave_hull.geom_type:
+            patch = PolygonPatch(concave_hull, fc='#303F9F',
+                                 ec='#000000', fill=True,
+                                 zorder=-1)
+            ax.add_patch(patch)
 
 
 if __name__ == '__main__':
