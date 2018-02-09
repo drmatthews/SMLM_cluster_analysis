@@ -294,8 +294,9 @@ def voronoi_segmentation(locs_path,
                          object_min_samples=3,
                          cluster_density_factor=20,
                          cluster_min_samples=3,
-                         num_rois=5,
-                         roi_size=7000.0):
+                         num_rois=1,
+                         roi_size=7000.0,
+                         show_plot=False):
     """
     This uses a Monte Carlo simulation to predict which
     localisations are no better than a random distribution.
@@ -340,7 +341,7 @@ def voronoi_segmentation(locs_path,
     if segment_rois:
         # use the individual intersections rather than an average
         for roi_id, roi in rois.items():
-            roi[roi_id]['intersection'] = intersections[roi_id]
+            roi['intersection'] = intersections[roi_id]
 
     else: # do the whole dataset
         # get the intersections and calculate the average
@@ -352,6 +353,7 @@ def voronoi_segmentation(locs_path,
         rois['image']['intersection'] = intersection
 
     # now loop over the rois data structure
+    clusters = {}
     for roi_id, roi in rois.items():
         # build the voronoi diagram
         vor = build_voronoi(roi['locs'])
@@ -374,19 +376,21 @@ def voronoi_segmentation(locs_path,
 
         # set parameters and find clusters in objects
         n_locs = len(locs.index)
-        clusters = voronoi_clustering(data,
-                                      cluster_density_factor,
-                                      cluster_min_samples,
-                                      cluster_column='cluster_id',
-                                      num_locs=n_locs)
+        clusters[roi_id] = voronoi_clustering(data,
+                                              cluster_density_factor,
+                                              cluster_min_samples,
+                                              cluster_column='cluster_id',
+                                              num_locs=n_locs)
+        if show_plot:
+            cfig = plot_voronoi_diagram(clusters[roi_id]['voronoi'],
+                                        locs_df=clusters[roi_id]['locs'],
+                                        cluster_column='cluster_id')
+            plot_cluster_polygons(objects['locs'],
+                                  figure=cfig,
+                                  cluster_column='object_id')
+            plt.show()
 
-        cfig = plot_voronoi_diagram(clusters['voronoi'],
-                                    locs_df=clusters['locs'],
-                                    cluster_column='cluster_id')
-        plot_cluster_polygons(objects['locs'],
-                              figure=cfig,
-                              cluster_column='object_id')
-        plt.show()
+    return clusters
 #
 #  helpers
 #
