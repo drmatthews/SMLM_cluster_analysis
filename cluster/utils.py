@@ -13,8 +13,9 @@ from scipy.spatial.distance import cdist
 from scipy.spatial import ConvexHull, Delaunay
 from .optics_ import OPTICS
 from .triangulation import pc_ratio
-from shapely.geometry import MultiPoint, MultiLineString
+from shapely.geometry import Polygon, MultiPoint, MultiLineString
 from shapely.ops import cascaded_union, polygonize
+from descartes import PolygonPatch
 from matplotlib import pylab as plt
 # import the imagej roi
 from read_roi import read_roi_file
@@ -402,10 +403,157 @@ def plot_voronoi_clusters(v, vor, save=False, filename=None, show_plot=True):
     if show_plot:
         plt.show()
 
-def import_clusters(path, sheetname=None):
+def plot_polygon(polygon, figure=None):
+    if figure is None:
+        from matplotlib import pylab as plt
+        fig = plt.figure(figsize=(10,10))
+    else:
+        fig = figure
+    ax = fig.add_subplot(111)
+    margin = .3
+    if polygon.bounds:
+        x_min, y_min, x_max, y_max = polygon.bounds
+        ax.set_xlim([x_min-margin, x_max+margin])
+        ax.set_ylim([y_min-margin, y_max+margin])
+        patch = PolygonPatch(polygon, fc='#999999',
+                             ec='#000000', fill=True,
+                             zorder=-1)
+        ax.add_patch(patch)
+    return fig
+
+
+def alpha_shape(points, alpha):
+    """
+    Compute the alpha shape (concave hull) of a set
+    of points.
+    @param points: np array of object coordinates.
+    @param alpha: alpha value to influence the
+        gooeyness of the border. Smaller numbers
+        don't fall inward as much as larger numbers.
+        Too large, and you lose everything!
+    """
+    if len(points) < 4:
+        # When you have a triangle, there is no sense
+        # in computing an alpha shape.
+        return MultiPoint(list(points)).convex_hull
+
+    def add_edge(edges, edge_points, coords, i, j):
+        """
+        Add a line between the i-th and j-th points,
+        if not in the list already
+        """
+        if (i, j) in edges or (j, i) in edges:
+            # already added
+            return
+
+        edges.add( (i, j) )
+        edge_points.append(coords[ [i, j] ])
+
+    # coords = np.array([point.coords[0] for point in points])
+    coords = points
+    tri = Delaunay(coords)
+    edges = set()
+    edge_points = []
+    # loop over triangles:
+    # ia, ib, ic = indices of corner points of the
+    # triangle
+    for ia, ib, ic in tri.vertices:
+        pa = coords[ia]
+        pb = coords[ib]
+        pc = coords[ic]
+        # Lengths of sides of triangle
+        a = math.sqrt((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2)
+        b = math.sqrt((pb[0]-pc[0])**2 + (pb[1]-pc[1])**2)
+        c = math.sqrt((pc[0]-pa[0])**2 + (pc[1]-pa[1])**2)
+        # Semiperimeter of triangle
+        s = (a + b + c)/2.0
+        # Area of triangle by Heron's formula
+        area = math.sqrt(s*(s-a)*(s-b)*(s-c))
+        circum_r = a*b*c/(4.0*area)
+        # Here's the radius filter.
+        #print circum_r
+        if circum_r < 1.0/alpha:
+            add_edge(edges, edge_points, coords, ia, ib)
+            add_edge(edges, edge_points, coords, ib, ic)
+            add_edge(edges, edge_points, coords, ic, ia)
+    m = MultiLineString(edge_points)
+    triangles = list(polygonize(m))
+    return cascaded_union(triangles), edge_points
+
+
+def plot_voronoi_diagram(vor, cluster_column='lk', locs_df=None):
+    v2d = voronoi_plot_2d(vor, show_points=False, show_vertices=False)
+
+    if locs_df is not None:
+        cluster_locs_df = locs_df.copy()
+        cluster_locs_df = cluster_locs_df[cluster_locs_df[cluster_column] != -1]
+        labels = cluster_locs_df[cluster_column].unique()
+        ax = v2d.axes[0]
+        for m in labels:
+            cluster_points = (
+                cluster_locs_df[cluster_locs_df[cluster_column] == m].
+                as_matrix(columns=['x [nm]', 'y [nm]'])
+            )
+
+            concave_hull, edge_points = (
+                    alpha_shape(cluster_points, alpha=0.01))
+            patch = PolygonPatch(concave_hull, fc='#999999',
+                                 ec='#000000', fill=True,
+                                 zorder=-1)
+            ax.add_patch(patch)
+            ax.plot(cluster_points[:, 0], cluster_points[:, 1], 'rx')
+        #     lines = LineCollection(edge_points,color=mcolors.to_rgba('b'),linestyle='solid')
+        #     ax.add_collection(lines)
+
+    return v2d
+
+def plot_cluster_polygons(locs, figure=None, cluster_column='lk', patch_colour='#303F9F'):
+    if cluster_column not in locs:
+        raise ValueError("Run clustering first")
+
+    locs = locs[locs[cluster_column] != -1]
+    labels = locs[cluster_column].unique()
+    if figure:
+        ax = figure.axes[0]
+    else:
+        figure = plt.figure()
+        ax = figure.add_subplot(111)
+
+    for m in labels:
+        points = (
+            locs[locs[cluster_column] == m].
+            as_matrix(columns=['x [nm]', 'y [nm]'])
+        )
+        concave_hull, edge_points = (
+                alpha_shape(points, alpha=0.01)
+        )
+        if 'GeometryCollection' not in concave_hull.geom_type:
+            patch = PolygonPatch(concave_hull, fc=patch_colour,
+                                 ec='#000000', fill=True,
+                                 zorder=-1)
+            ax.add_patch(patch)
+        plt.plot(points[:, 0], points[:, 1], 'bo', alpha=.5)
+    return figure
+
+
+def polygon_area(points):
+    concave_hull, edge_points = (
+            alpha_shape(points, alpha=0.01)
+    )        
+    return concave_hull.area
+    
+
+def polygon_perimeter(points):
+    concave_hull, edge_points = (
+            alpha_shape(points, alpha=0.01)
+    )        
+    return concave_hull.length
+        
+
+def import_optics_clusters(path, sheetname=None):
     if path.endswith('xlsx'):
         cluster_sn = 'cluster coordinates'
-        cluster_sn = 'noise'
+        noise_sn = 'noise'
         if sheetname:
             cluster_sn = '{0} cluster coordinates'.format(sheetname)
             noise_sn = '{0} noise'.format(sheetname)  
@@ -420,6 +568,18 @@ def import_clusters(path, sheetname=None):
         return cluster_list
     else:
         raise ValueError("Input data must be in Excel format")
+        
+def import_voronoi_clusters(path, sheetname=None):
+    if path.endswith('xlsx'):
+        cluster_sn = 'localisations'
+        if sheetname:
+            cluster_sn = '{0} localisations'.format(sheetname)
+
+        clusters_df = pd.read_excel(path, sheet_name=cluster_sn)
+        return clusters_df
+    else:
+        raise ValueError("Input data must be in Excel format")
+
 
 if __name__ == '__main__':
 	root_dir = 'C:\\Users\\NIC ADMIN\\Documents\\atto647n storm data 180111\\'

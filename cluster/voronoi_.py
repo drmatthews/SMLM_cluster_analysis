@@ -34,11 +34,10 @@ import pandas as pd
 from matplotlib import pylab as plt
 from scipy.spatial import Voronoi, voronoi_plot_2d, ConvexHull
 from scipy.spatial import Delaunay
-from shapely.geometry import Polygon, MultiPoint, MultiLineString
-from shapely.ops import cascaded_union, polygonize
-from descartes import PolygonPatch
+from shapely.geometry import Polygon
 from read_roi import read_roi_zip
 from read_roi import read_roi_file
+from .utils import plot_voronoi_diagram, plot_cluster_polygons
 
 
 def build_voronoi(locs_df,
@@ -118,7 +117,8 @@ def voronoi_clustering(vor_data,
         print("n_locs in voronoi_clustering: {}".format(n_locs))
         ave_density = density(locs_df)
         print("ave density: {}".format(ave_density))
-        locs_df[cluster_column] = -1
+        if cluster_column not in locs_df:
+            locs_df[cluster_column] = -1
         min_density = density_factor * ave_density
         visited = np.zeros((n_locs), dtype = np.int32)
 
@@ -176,7 +176,7 @@ def voronoi_clustering(vor_data,
 
 
 def voronoi_montecarlo(roi,
-                       iterations=20,
+                       iterations=10,
                        confidence=99,
                        pixel_size=16.0,
                        segment_clusters=False,
@@ -291,6 +291,8 @@ def voronoi_segmentation(locs_path,
                          roi_path=None,
                          segment_rois=False,
                          pixel_size=16.0,
+                         monte_carlo=True,
+                         object_density_factor=2,
                          object_min_samples=3,
                          cluster_density_factor=20,
                          cluster_min_samples=3,
@@ -321,68 +323,99 @@ def voronoi_segmentation(locs_path,
                              "as the data and make sure it has the same base"
                              "filename as the localisations."))
         # add the localisations to the rois dict
-        mc_rois = roi_coords(locs, input_rois, pixel_size)
+        rois = roi_coords(locs, input_rois, pixel_size)
     else:
         # generate a random set of rois
-        mc_rois = random_rois(locs, num_rois, roi_size)
+        rois = random_rois(locs, num_rois, roi_size)
 
-    # now run Monte Carlo on each roi
-    intersection = 0.0
-    for roi_id, roi in mc_rois.items():
-        print("Monte Carlo simulation in ROI {0}".format(roi_id))
-        # pass the locs DataFrame and roi dict to voronoi_montecarlo
-        rmc = voronoi_montecarlo(roi, show_plot=False)
-        intersection += rmc['intersection']
+    if monte_carlo:
+        intersection = 0.0
+        for roi_id, roi in rois.items():
+            print("Monte Carlo simulation in ROI {0}".format(roi_id))
+            # pass the locs DataFrame and roi dict to voronoi_montecarlo
+            rmc = voronoi_montecarlo(roi, show_plot=False)
+            intersection += rmc['intersection']
 
-    # always use the average intersection
-    intersection /= float(len(mc_rois))
-    thresh = 1.0 / intersection
+        # always use the average intersection
+        intersection /= float(len(rois))
+        thresh = 1.0 / intersection
 
-    if segment_rois:
-        # use these same rois for the Monte Carlo
-        rois = mc_rois
-    else:
+    # density factor for each roi (whether random roi or IJ roi)
+    density_factor = {}
+    for roi_id, roi in rois.items():
+        if monte_carlo:
+            density_factor[roi_id] = thresh / density(roi['locs'])
+        else:
+            density_factor[roi_id] = object_density_factor
+
+    if not segment_rois:
         # use all the localisations but mimic the rois dict data structure
         rois = {'image': {'locs': locs}}
+        # and reset the density_factor for the whole image
+        density_factor = {}
+        if monte_carlo:
+            density_factor['image'] = thresh / density(rois['image']['locs'])
+        else:
+            density_factor['image'] = object_density_factor
+
+    print("density_factor: {}".format(density_factor))
 
     # now loop over the rois data structure
-    clusters = {}
     for roi_id, roi in rois.items():
         # build the voronoi diagram
-        vor = build_voronoi(roi['locs'])
+        roi_locs = roi['locs']
+        roi_locs['object_id'] = -1
+        roi_locs['cluster_id'] = -1        
+        vor = build_voronoi(roi_locs)
+        
+        if monte_carlo:
+            print("intersection: {0}".format(intersection))
+            print("density threshold: {0}".format(thresh))
 
-        # segment objects based on the result of the monte carlo simulation
-        d = density(roi['locs'])
-        density_factor = thresh / d
-        print("density_factor: {}".format(density_factor))
-        objects = voronoi_clustering(vor,
-                                     density_factor,
-                                     object_min_samples,
-                                     cluster_column='object_id')
+        print("density_factor: {}".format(density_factor[roi_id]))
+
+        objs = voronoi_clustering(vor,
+                                  density_factor[roi_id],
+                                  object_min_samples,
+                                  cluster_column='object_id')
+                                  
+        # write the objects to the original localisations data structure
+        obj_locs = objs['locs']
+        roi_locs.loc[roi_locs.object_id.isin(obj_locs.object_id), ['object_id']] = (
+            obj_locs[obj_locs['object_id'] > -1]['object_id'])
 
         # retain only the objects that are 'clustered'
-        filtered = objects['locs'][objects['locs']['object_id'] != -1]
+        filtered = obj_locs[obj_locs['object_id'] != -1]
 
         # prepare the data structure for re-clustering
         data = {'voronoi': vor['voronoi'], 'locs': filtered}
 
         # set parameters and find clusters in objects
-        n_locs = len(roi['locs'].index)
-        clusters[roi_id] = voronoi_clustering(data,
-                                              cluster_density_factor,
-                                              cluster_min_samples,
-                                              cluster_column='cluster_id',
-                                              num_locs=n_locs)
+        n_locs = len(roi_locs.index)
+        clusters = voronoi_clustering(data,
+                                      cluster_density_factor,
+                                      cluster_min_samples,
+                                      cluster_column='cluster_id',
+                                      num_locs=n_locs)
+        
+        # write the clusters to the original localisations data structure
+        clust_locs = clusters['locs']
+        roi_locs.loc[roi_locs.cluster_id.isin(clust_locs.cluster_id), ['cluster_id']] = (
+            clust_locs[clust_locs['cluster_id'] > -1]['cluster_id'])        
+
         if show_plot:
-            cfig = plot_voronoi_diagram(clusters[roi_id]['voronoi'],
-                                        locs_df=clusters[roi_id]['locs'],
+            cfig = plot_voronoi_diagram(clusters['voronoi'],
+                                        locs_df=clusters['locs'],
                                         cluster_column='cluster_id')
-            plot_cluster_polygons(objects['locs'],
+            plot_cluster_polygons(objs['locs'],
                                   figure=cfig,
                                   cluster_column='object_id')
             plt.show()
-
-    return clusters
+            
+        # fill nan values before returning
+        roi_locs[['object_id', 'cluster_id']] = roi_locs[['object_id', 'cluster_id']].fillna(value=-1)
+        roi['locs'] = roi_locs
+    return rois
 #
 #  helpers
 #
@@ -483,136 +516,6 @@ def random_rois(locs, num_rois=5, roi_size=7000.0):
         rand_rois['roi_0{}'.format(r)] = roi
 
     return rand_rois
-
-def alpha_shape(points, alpha):
-    """
-    Compute the alpha shape (concave hull) of a set
-    of points.
-    @param points: np array of object coordinates.
-    @param alpha: alpha value to influence the
-        gooeyness of the border. Smaller numbers
-        don't fall inward as much as larger numbers.
-        Too large, and you lose everything!
-    """
-    if len(points) < 4:
-        # When you have a triangle, there is no sense
-        # in computing an alpha shape.
-        return MultiPoint(list(points)).convex_hull
-
-    def add_edge(edges, edge_points, coords, i, j):
-        """
-        Add a line between the i-th and j-th points,
-        if not in the list already
-        """
-        if (i, j) in edges or (j, i) in edges:
-            # already added
-            return
-
-        edges.add( (i, j) )
-        edge_points.append(coords[ [i, j] ])
-
-    # coords = np.array([point.coords[0] for point in points])
-    coords = points
-    tri = Delaunay(coords)
-    edges = set()
-    edge_points = []
-    # loop over triangles:
-    # ia, ib, ic = indices of corner points of the
-    # triangle
-    for ia, ib, ic in tri.vertices:
-        pa = coords[ia]
-        pb = coords[ib]
-        pc = coords[ic]
-        # Lengths of sides of triangle
-        a = math.sqrt((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2)
-        b = math.sqrt((pb[0]-pc[0])**2 + (pb[1]-pc[1])**2)
-        c = math.sqrt((pc[0]-pa[0])**2 + (pc[1]-pa[1])**2)
-        # Semiperimeter of triangle
-        s = (a + b + c)/2.0
-        # Area of triangle by Heron's formula
-        area = math.sqrt(s*(s-a)*(s-b)*(s-c))
-        circum_r = a*b*c/(4.0*area)
-        # Here's the radius filter.
-        #print circum_r
-        if circum_r < 1.0/alpha:
-            add_edge(edges, edge_points, coords, ia, ib)
-            add_edge(edges, edge_points, coords, ib, ic)
-            add_edge(edges, edge_points, coords, ic, ia)
-    m = MultiLineString(edge_points)
-    triangles = list(polygonize(m))
-    return cascaded_union(triangles), edge_points
-
-
-def plot_polygon(polygon, figure=None):
-    if figure is None:
-        from matplotlib import pylab as plt
-        fig = plt.figure(figsize=(10,10))
-    else:
-        fig = figure
-    ax = fig.add_subplot(111)
-    margin = .3
-    if polygon.bounds:
-        x_min, y_min, x_max, y_max = polygon.bounds
-        ax.set_xlim([x_min-margin, x_max+margin])
-        ax.set_ylim([y_min-margin, y_max+margin])
-        patch = PolygonPatch(polygon, fc='#999999',
-                             ec='#000000', fill=True,
-                             zorder=-1)
-        ax.add_patch(patch)
-    return fig
-
-
-def plot_voronoi_diagram(vor, cluster_column='lk', locs_df=None):
-    v2d = voronoi_plot_2d(vor, show_points=False, show_vertices=False)
-
-    if locs_df is not None:
-        cluster_locs_df = locs_df.copy()
-        cluster_locs_df = cluster_locs_df[cluster_locs_df[cluster_column] != -1]
-        labels = cluster_locs_df[cluster_column].unique()
-        ax = v2d.axes[0]
-        for m in labels:
-            cluster_points = (
-                cluster_locs_df[cluster_locs_df[cluster_column] == m].
-                as_matrix(columns=['x [nm]', 'y [nm]'])
-            )
-
-            concave_hull, edge_points = (
-                    alpha_shape(cluster_points, alpha=0.01))
-
-            patch = PolygonPatch(concave_hull, fc='#999999',
-                                 ec='#000000', fill=True,
-                                 zorder=-1)
-            ax.add_patch(patch)
-            ax.plot(cluster_points[:, 0], cluster_points[:, 1], 'rx')
-        #     lines = LineCollection(edge_points,color=mcolors.to_rgba('b'),linestyle='solid')
-        #     ax.add_collection(lines)
-
-    return v2d
-
-def plot_cluster_polygons(locs, figure=None, cluster_column='lk'):
-    if cluster_column not in locs:
-        raise ValueError("Run clustering first")
-
-    locs = locs[locs[cluster_column] != -1]
-    labels = locs[cluster_column].unique()
-    if figure:
-        ax = figure.axes[0]
-    else:
-        figure = plt.figure()
-        ax = figure.add_subplot(111)
-    for m in labels:
-        points = (
-            locs[locs[cluster_column] == m].
-            as_matrix(columns=['x [nm]', 'y [nm]'])
-        )
-        concave_hull, edge_points = (
-                alpha_shape(points, alpha=0.01)
-        )
-        if 'GeometryCollection' not in concave_hull.geom_type:
-            patch = PolygonPatch(concave_hull, fc='#303F9F',
-                                 ec='#000000', fill=True,
-                                 zorder=-1)
-            ax.add_patch(patch)
 
 
 if __name__ == '__main__':
