@@ -176,7 +176,7 @@ def voronoi_clustering(vor_data,
 
 
 def voronoi_montecarlo(roi,
-                       iterations=1,
+                       iterations=100,
                        confidence=99,
                        pixel_size=16.0,
                        segment_clusters=False,

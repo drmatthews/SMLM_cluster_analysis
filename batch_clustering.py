@@ -371,8 +371,8 @@ if __name__=='__main__':
     parameters['cluster_min_samples'] = 3
     parameters['cluster_density_factor'] = 20
     parameters['conditions'] = ['wtTNF', 'control']
-    parameters['input_dir'] = "C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test"
-    parameters['output_dir'] = "C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test\\out"
+    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
+    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
     parameters['data_source'] = 'thunderstorm'
     run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
 
