@@ -176,7 +176,7 @@ def voronoi_clustering(vor_data,
 
 
 def voronoi_montecarlo(roi,
-                       iterations=10,
+                       iterations=1,
                        confidence=99,
                        pixel_size=16.0,
                        segment_clusters=False,
@@ -365,9 +365,9 @@ def voronoi_segmentation(locs_path,
         # build the voronoi diagram
         roi_locs = roi['locs']
         roi_locs['object_id'] = -1
-        roi_locs['cluster_id'] = -1        
+        roi_locs['cluster_id'] = -1
         vor = build_voronoi(roi_locs)
-        
+
         if monte_carlo:
             print("intersection: {0}".format(intersection))
             print("density threshold: {0}".format(thresh))
@@ -378,7 +378,7 @@ def voronoi_segmentation(locs_path,
                                   density_factor[roi_id],
                                   object_min_samples,
                                   cluster_column='object_id')
-                                  
+
         # write the objects to the original localisations data structure
         obj_locs = objs['locs']
         roi_locs.loc[roi_locs.object_id.isin(obj_locs.object_id), ['object_id']] = (
@@ -397,11 +397,11 @@ def voronoi_segmentation(locs_path,
                                       cluster_min_samples,
                                       cluster_column='cluster_id',
                                       num_locs=n_locs)
-        
+
         # write the clusters to the original localisations data structure
         clust_locs = clusters['locs']
         roi_locs.loc[roi_locs.cluster_id.isin(clust_locs.cluster_id), ['cluster_id']] = (
-            clust_locs[clust_locs['cluster_id'] > -1]['cluster_id'])        
+            clust_locs[clust_locs['cluster_id'] > -1]['cluster_id'])
 
         if show_plot:
             cfig = plot_voronoi_diagram(clusters['voronoi'],
@@ -411,7 +411,7 @@ def voronoi_segmentation(locs_path,
                                   figure=cfig,
                                   cluster_column='object_id')
             plt.show()
-            
+
         # fill nan values before returning
         roi_locs[['object_id', 'cluster_id']] = roi_locs[['object_id', 'cluster_id']].fillna(value=-1)
         roi['locs'] = roi_locs

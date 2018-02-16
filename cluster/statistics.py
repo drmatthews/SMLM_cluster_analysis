@@ -17,19 +17,22 @@ def collect_filenames(folder, dataset_name):
         if filename.endswith('xlsx') and (dataset_name in filename):
             fnames.append(filename)
     return fnames
-    
+
 
 def write_stats(output_path, data, dataset_name):
-    df = pd.DataFrame()
-    for key, value in data.items():
-        df[key] = value
-    
+    if isinstance(data, dict):
+        df = pd.DataFrame()
+        for key, value in data.items():
+            df[key] = value
+    else:
+        df = data
+
     writer = pd.ExcelWriter(output_path, engine='openpyxl')
     if os.path.exists(output_path):
         book = load_workbook(output_path)
         writer.book = book
         writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
-        
+
     df.to_excel(writer, sheet_name=dataset_name, index=False)
     writer.save()
 
@@ -86,7 +89,7 @@ def percentage_of_total(folder,
             if 'eq' in condition:
                 filtered = float(df[df[cluster_column] == -1].shape[0])
             elif 'gt' in condition:
-                filtered = float(df[df[cluster_column] > -1].shape[0])         
+                filtered = float(df[df[cluster_column] > -1].shape[0])
             print("number of filtered locs: {0}".format(filtered))
             total = float(df.shape[0])
             print("total number of localisations: {0}".format(total))
@@ -95,7 +98,7 @@ def percentage_of_total(folder,
             percent.append(p)
     return np.array(percent)
 
-    
+
 def percentage_objects_with_clusters(folder, sheet_name, dataset_name):
     percent = []
     for filename in os.listdir(folder):
@@ -103,7 +106,7 @@ def percentage_objects_with_clusters(folder, sheet_name, dataset_name):
             print(filename)
             df = pd.read_excel(os.path.join(folder, filename),
                                sheet_name=sheet_name)
-            
+
             objects = float(df[df['object_id'] > -1].shape[0])
             clusters = float(df[df['cluster_id'] > -1].shape[0])
 

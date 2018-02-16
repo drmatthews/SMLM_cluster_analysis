@@ -15,6 +15,7 @@ from cluster.utils import (optics_clustering,
                            plot_optics_clusters,
                            polygon_area,
                            polygon_perimeter)
+from cluster import statistics
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -216,9 +217,14 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
 
 
 def collect_stats(df, col):
-    labels = df[col].unique()
+    total = float(df.shape[0])
+    not_noise = df[df[col] != -1]
+    percentage = float(not_noise.shape[0]) / total
+    objects_with_clusters = (
+        float(df[(df['object_id'] != -1) & (df['cluster_id'] != -1)].shape[0])
+    )
+    labels = not_noise[col].unique()
     area = []
-    parea = []
     perimeter = []
     occupancy = []
     stats = {}
@@ -226,15 +232,16 @@ def collect_stats(df, col):
     for m in labels:
         group = df[df[col] == m]
         points = group.as_matrix(['x [nm]', 'y [nm]'])
-        area.append(group['area'].sum())
-        parea.append(polygon_area(points))
+        area.append(polygon_area(points))
         perimeter.append(polygon_perimeter(points))
         occupancy.append(len(group.index))
-        
+
     stats['area'] = area
-    stats['parea'] = parea
     stats['perimeter'] = perimeter
     stats['occupancy'] = occupancy
+    stats['percentage {0}s'.format(col[:len(col) - 3])] = percentage
+    stats['not_noise'] = float(not_noise.shape[0])
+    stats['objects_with_clusters'] = objects_with_clusters
     return stats
 
 
@@ -283,16 +290,34 @@ def run_voronoi_segmentation(parameters,
                                          cluster_density_factor=cdf,
                                          cluster_min_samples=cms,
                                          show_plot=False)
-            
+
+            roi_cluster_means = []
             for vr_id, vroi in vrois.items():
                 v_locs = vroi['locs']
-                print("v_locs shape: {0}".format(v_locs.shape))
-                print("objects shape: {0}".format(v_locs[v_locs['object_id'] != -1].shape))
-                object_stats = collect_stats(v_locs[v_locs['object_id'] != -1], 'object_id')
-                cluster_stats = collect_stats(v_locs[v_locs['cluster_id'] != -1], 'cluster_id')
+                object_stats = collect_stats(v_locs, 'object_id')
+                cluster_stats = collect_stats(v_locs, 'cluster_id')
+                cluster_stats['percentage objects'] = object_stats['percentage objects']
+                poc = (
+                    object_stats['objects_with_clusters'] / object_stats['not_noise']
+                )
+                cluster_stats['percentage_objects_with_clusters'] = poc
 
                 object_stats_df = pd.DataFrame(object_stats)
                 cluster_stats_df = pd.DataFrame(cluster_stats)
+                print(cluster_stats_df.head())
+                # remove unwanted columns
+                cluster_stats_df.drop(columns=['objects_with_clusters', 'not_noise'])
+                # reorder ready for saving
+                cluster_stats_df = cluster_stats_df[['area',
+                                                     'perimeter',
+                                                     'occupancy',
+                                                     'percentage objects',
+                                                     'percentage clusters',
+                                                     'percentage_objects_with_clusters']]
+                # collect the mean values for each parameter in df to write
+                # to file later - list of pandas series
+                roi_cluster_means.append(cluster_stats_df.mean())
+
                 writer = pd.ExcelWriter(output_path, engine='openpyxl')
                 if os.path.exists(output_path):
                     book = load_workbook(output_path)
@@ -315,118 +340,28 @@ def run_voronoi_segmentation(parameters,
                     index=False
                 )
                 writer.save()
-                
-        # area
-        # tnf_area = cs.mean_per_image(folder, 'wtTNF', 'area', 'image cluster stats')
-        # muttnf_area = cs.mean_per_image(folder, 'mutTNF', 'area', 'image cluster stats')
-        # control_area = cs.mean_per_image(folder, 'control', 'area', 'image cluster stats')
 
-        # parea
-        # tnf_parea = cs.mean_per_image(folder, 'wtTNF', 'parea', 'image cluster stats')
-        # muttnf_parea = cs.mean_per_image(folder, 'mutTNF', 'parea', 'image cluster stats')
-        # control_parea = cs.mean_per_image(folder, 'control', 'parea', 'image cluster stats')
+            # turn list of series into a dataframe
+            if len(roi_cluster_means) > 1:
+                stats[filename] = pd.concat(roi_cluster_means,
+                                            axis=0,
+                                            keys=[s.name for s in roi_cluster_means])
+            else:
+                stats[filename] = pd.DataFrame(roi_cluster_means[0]).T
 
-        # perimeter
-        # tnf_perimeter = cs.mean_per_image(folder, 'wtTNF', 'perimeter', 'image cluster stats')
-        # muttnf_perimeter = cs.mean_per_image(folder, 'mutTNF', 'perimeter', 'image cluster stats')
-        # control_perimeter = cs.mean_per_image(folder, 'control', 'perimeter', 'image cluster stats')
+    print("stats: {0}".format(stats))
+    fnames = list(stats.keys())
+    stats_path = os.path.join(output_dir, 'cluster_statistics.xlsx')
+    for condition in conditions:
+        condition_fnames = [fname for fname in fnames if condition in fname]
+        data = {'files': condition_fnames}
+        for cf in condition_fnames:
+            cluster_stats = stats[cf]
+            for column in cluster_stats:
+                if column != 'labels':
+                    data[column] = cluster_stats[column].mean()
 
-        # occupancy
-        # tnf_occupancy = cs.mean_per_image(folder, 'wtTNF', 'occupancy', 'image cluster stats')
-        # muttnf_occupancy = cs.mean_per_image(folder, 'mutTNF', 'occupancy', 'image cluster stats')
-        # control_occupancy = cs.mean_per_image(folder, 'control', 'occupancy', 'image cluster stats')
-
-        # tnf percentages
-        # tnf_object_percentage = cs.percentage_of_total(folder,
-                                                       # 'image objects localisations',
-                                                       # 'wtTNF',
-                                                       # condition='gt',
-                                                       # cluster_column='object_id')
-        # tnf_cluster_percentage = cs.percentage_of_total(folder,
-                                                        # 'image clusters localisations',
-                                                        # 'wtTNF',
-                                                        # condition='gt',
-                                                        # cluster_column='cluster_id')
-        # tnf_objects_with_clusters = cs.percentage_objects_with_clusters(folder,
-                                                                    # 'image clusters localisations',
-                                                                    # 'wtTNF')
-
-        # mut tnf percentages
-        # muttnf_object_percentage = cs.percentage_of_total(folder,
-                                                          # 'image objects localisations',
-                                                          # 'mutTNF',
-                                                          # condition='gt',
-                                                          # cluster_column='object_id')
-        # muttnf_cluster_percentage = cs.percentage_of_total(folder,
-                                                           # 'image clusters localisations',
-                                                           # 'mutTNF',
-                                                           # condition='gt',
-                                                           # cluster_column='cluster_id')
-        # muttnf_objects_with_clusters = cs.percentage_objects_with_clusters(folder,
-                                                                       # 'image clusters localisations',
-                                                                       # 'mutTNF')
-
-
-        # control percentages
-        # control_object_percentage = cs.percentage_of_total(folder,
-                                                           # 'image objects localisations',
-                                                           # 'control',
-                                                           # condition='gt',
-                                                           # cluster_column='object_id')
-        # control_cluster_percentage = cs.percentage_of_total(folder,
-                                                            # 'image clusters localisations',
-                                                            # 'control',
-                                                            # condition='gt',
-                                                            # cluster_column='cluster_id')
-        # control_objects_with_clusters = cs.percentage_objects_with_clusters(folder,
-                                                                            # 'image clusters localisations',
-                                                                            # 'control')
-
-        # write to file
-        # path = os.path.join(folder, "voronoi_cluster_stats.xlsx")
-        # tnf_fnames = cs.collect_filenames(folder, 'wtTNF')
-        # tnf_data = {'files': tnf_fnames,
-                    # 'percent objects': tnf_object_percentage,
-                    # 'percent clusters': tnf_cluster_percentage,
-                    # 'percent objects with clusters': tnf_objects_with_clusters}
-        # cs.write_stats(path, tnf_data, 'wtTNF')
-
-        # muttnf_fnames = cs.collect_filenames(folder, 'mutTNF')
-        # muttnf_data = {'files': muttnf_fnames,
-                       # 'percent objects': muttnf_object_percentage,
-                       # 'percent clusters': muttnf_cluster_percentage,
-                       # 'percent objects with clusters': muttnf_objects_with_clusters}
-        # cs.write_stats(path, muttnf_data, 'mutTNF')
-
-        # control_fnames = cs.collect_filenames(folder, 'control')
-        # control_data = {'files': control_fnames,
-                        # 'percent objects': control_object_percentage,
-                        # 'percent clusters': control_cluster_percentage,
-                        # 'percent objects with clusters': control_objects_with_clusters}
-        # cs.write_stats(path, control_data, 'control')
-
-        # write to file
-        # path = os.path.join(folder, "voronoi_cluster_stats.xlsx")
-        # tnf_fnames = collect_filenames(folder, 'wtTNF')
-        # tnf_data = {'files': tnf_fnames,
-                    # 'percent objects': tnf_object_percentage,
-                    # 'percent clusters': tnf_cluster_percentage,
-                    # 'percent objects with clusters': tnf_objects_with_clusters}
-        # write_stats(path, tnf_data, 'wtTNF')
-
-        # muttnf_fnames = collect_filenames(folder, 'mutTNF')
-        # muttnf_data = {'files': muttnf_fnames,
-                       # 'percent objects': muttnf_object_percentage,
-                       # 'percent clusters': muttnf_cluster_percentage,
-                       # 'percent objects with clusters': muttnf_objects_with_clusters}
-        # write_stats(path, muttnf_data, 'mutTNF')
-
-        # control_fnames = collect_filenames(folder, 'control')
-        # control_data = {'files': control_fnames,
-                        # 'percent objects': control_object_percentage,
-                        # 'percent clusters': control_cluster_percentage,
-                        # 'percent objects with clusters': control_objects_with_clusters}
-        # write_stats(path, control_data, 'control')        
+        statistics.write_stats(stats_path, data, condition)
 
 if __name__=='__main__':
     parameters = {}
@@ -435,11 +370,12 @@ if __name__=='__main__':
     parameters['object_density_factor'] = 4.213
     parameters['cluster_min_samples'] = 3
     parameters['cluster_density_factor'] = 20
-    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n thunderstorm no density filter\\test"
-    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n thunderstorm no density filter\\test\\out"
+    parameters['conditions'] = ['wtTNF', 'control']
+    parameters['input_dir'] = "C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test"
+    parameters['output_dir'] = "C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test\\out"
     parameters['data_source'] = 'thunderstorm'
     run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
-    
+
     # parameters = {}
     # parameters['pixel_size'] = 16.0 #nm
     # parameters['object_min_samples'] = 3
