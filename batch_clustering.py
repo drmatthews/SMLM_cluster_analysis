@@ -20,6 +20,7 @@ from cluster import statistics
 import warnings
 warnings.filterwarnings("ignore")
 
+
 def collate_dataset_stats(out_dir, dataset_name, dataset_type, sheetname):
     print(dataset_name)
     df_list = []
@@ -28,10 +29,11 @@ def collate_dataset_stats(out_dir, dataset_name, dataset_type, sheetname):
             if (dataset_type in filename) and (dataset_name in filename):
                 print(filename)
                 df_list.append(pd.read_excel(
-                    os.path.join(out_dir,filename),
+                    os.path.join(out_dir, filename),
                     sheetname=sheetname))
 
     return pd.concat(df_list)
+
 
 def cluster_near_neighbours(out_dir, dataset_name, dataset_type):
     print(dataset_name)
@@ -41,7 +43,7 @@ def cluster_near_neighbours(out_dir, dataset_name, dataset_type):
             if (dataset_type in filename) and (dataset_name in filename):
                 print(filename)
                 df = pd.read_excel(
-                                os.path.join(out_dir,filename),
+                                os.path.join(out_dir, filename),
                                 sheetname='cluster coordinates')
                 nn = kdtree_nn(df.as_matrix(columns=['x [nm]', 'y [nm]']))
                 nn_list.append(nn)
@@ -50,6 +52,7 @@ def cluster_near_neighbours(out_dir, dataset_name, dataset_type):
     nn_df.columns = ['Distance [nm]']
 
     return nn_df
+
 
 def run_optics(parameters, verbose=True, use_roi=False, pixel_size=16.0):
 
@@ -70,25 +73,29 @@ def run_optics(parameters, verbose=True, use_roi=False, pixel_size=16.0):
 
         file_ext = os.path.splitext(filename)[1]
         if ext in file_ext:
-            print("optics clustering for file %s"%filename)
-            filepath = os.path.join(input_dir,filename)
+            print("optics clustering for file {0}".format(filename))
+            filepath = os.path.join(input_dir, filename)
             basename = os.path.splitext(filename)[0]
             output_path = os.path.join(output_dir, basename+'_optics.xlsx')
 
             data = Localisations(filepath, source=data_source)
             points = data.points
-            xy = points.as_matrix(columns=['x','y'])
+            xy = points.as_matrix(columns=['x', 'y'])
 
             if use_roi:
-                roi_zip_path = os.path.join(input_dir, basename + '_roiset.zip')
-                roi_file_path = os.path.join(input_dir, basename + '_roiset.roi')
+                roi_zip_path = os.path.join(input_dir,
+                                            basename + '_roiset.zip')
+                roi_file_path = os.path.join(input_dir,
+                                             basename + '_roiset.roi')
+
                 if os.path.exists(roi_zip_path):
                     rois = read_roi_zip(roi_zip_path)
                 elif os.path.exists(roi_file_path):
                     rois = read_roi_file(roi_file_path)
                 else:
                     raise ValueError(("No ImageJ roi file exists -"
-                                     "you should put the file in the same directory as the data"))
+                                      "you should put the file in the same"
+                                      "directory as the data"))
 
                 coords = {}
                 for roi_id, roi in rois.items():
@@ -103,15 +110,20 @@ def run_optics(parameters, verbose=True, use_roi=False, pixel_size=16.0):
             else:
                 coords = dict([('image', xy)])
 
-            (optics_clusters, noise) = optics_clustering(coords,
-                                                         eps=eps,
-                                                         eps_extract=eps_extract,
-                                                         min_samples=min_samples)
+            (optics_clusters, noise) = (
+                optics_clustering(coords,
+                                  eps=eps,
+                                  eps_extract=eps_extract,
+                                  min_samples=min_samples)
+                )
 
             if verbose:
                 if optics_clusters:
                     for roi_id in optics_clusters.keys():
-                        plot_filename = os.path.join(output_dir, basename + '_{0}_clusters.png'.format(roi_id))
+                        plot_filename = os.path.join(
+                            output_dir,
+                            basename + '_{0}_clusters.png'.format(roi_id)
+                        )
                         if noise:
                             noise_in_roi = noise[roi_id]
                         else:
@@ -127,7 +139,7 @@ def run_optics(parameters, verbose=True, use_roi=False, pixel_size=16.0):
                 if oc.n_clusters > 0:
                     oc.save(output_path, sheetname=roi)
                 else:
-                    print("No clusters found in %s"%filename)
+                    print("No clusters found in {0}".format(filename))
                     continue
 
 
@@ -142,23 +154,26 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
     for filename in os.listdir(input_dir):
 
         if filename.endswith('csv'):
-            print("voronoi clustering for file %s"%filename)
-            filepath = os.path.join(input_dir,filename)
+            print("voronoi clustering for file {0}".format(filename))
+            filepath = os.path.join(input_dir, filename)
             basename = os.path.splitext(filename)[0]
             output_path = os.path.join(output_dir, basename+'_voronoi.xlsx')
 
             locs = pd.read_csv(filepath)
 
             if use_roi:
-                roi_zip_path = os.path.join(input_dir, basename + '_roiset.zip')
-                roi_file_path = os.path.join(input_dir, basename + '_roiset.roi')
+                roi_zip_path = os.path.join(input_dir,
+                                            basename + '_roiset.zip')
+                roi_file_path = os.path.join(input_dir,
+                                             basename + '_roiset.roi')
                 if os.path.exists(roi_zip_path):
                     rois = read_roi_zip(roi_zip_path)
                 elif os.path.exists(roi_file_path):
                     rois = read_roi_file(roi_file_path)
                 else:
                     raise ValueError(("No ImageJ roi file exists -"
-                                     "you should put the file in the same directory as the data"))
+                                      "you should put the file in the same"
+                                      "directory as the data"))
 
                 coords = {}
                 for roi_id, roi in rois.items():
@@ -166,10 +181,12 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
                         if not isinstance(v, str):
                             roi[k] = float(v) * pixel_size
 
-                    coords[roi_id] = locs[(locs['x [nm]'] > roi['left']) &
-                                          (locs['x [nm]'] < roi['left'] + roi['width']) &
-                                          (locs['y [nm]'] > roi['top']) &
-                                          (locs['y [nm]'] < roi['top'] + roi['height'])].reset_index(drop=True)
+                    coords[roi_id] = (locs[
+                        (locs['x [nm]'] > roi['left']) &
+                        (locs['x [nm]'] < roi['left'] + roi['width']) &
+                        (locs['y [nm]'] > roi['top']) &
+                        (locs['y [nm]'] < roi['top'] + roi['height'])]
+                    ).reset_index(drop=True)
             else:
                 coords = dict([('image', locs)])
 
@@ -180,7 +197,11 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
                     print("no coords in roi")
                     continue
 
-                voronoi_df = voronoi(df, density_factor, min_samples, show_plot=verbose, verbose=verbose)
+                voronoi_df = voronoi(df,
+                                     density_factor,
+                                     min_samples,
+                                     show_plot=verbose,
+                                     verbose=verbose)
 
                 cluster_locs_df = voronoi_df[voronoi_df['lk'] != -1]
                 labels = cluster_locs_df['lk'].unique()
@@ -198,7 +219,9 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
                     if os.path.exists(output_path):
                         book = load_workbook(output_path)
                         writer.book = book
-                        writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                        writer.sheets = dict(
+                            (ws.title, ws) for ws in book.worksheets
+                        )
 
                     cluster_locs_df.to_excel(
                         writer,
@@ -212,7 +235,7 @@ def run_voronoi(parameters, verbose=True, use_roi=False, pixel_size=16.0):
                     )
                     writer.save()
                 else:
-                    print("No clusters found in %s"%filename)
+                    print("No clusters found in {0}".format(filename))
                     continue
 
 
@@ -231,13 +254,14 @@ def collect_stats(df, col):
     stats['labels'] = labels
     for m in labels:
         group = df[df[col] == m]
-        points = group.as_matrix(['x [nm]', 'y [nm]'])
-        area.append(polygon_area(points))
-        perimeter.append(polygon_perimeter(points))
+        # points = group.as_matrix(['x [nm]', 'y [nm]'])
+        area.append(group['area'].sum())
+        # area.append(polygon_area(points))
+        # perimeter.append(polygon_perimeter(points))
         occupancy.append(len(group.index))
 
     stats['area'] = area
-    stats['perimeter'] = perimeter
+    # stats['perimeter'] = perimeter
     stats['occupancy'] = occupancy
     stats['percentage {0}s'.format(col[:len(col) - 3])] = percentage
     stats['not_noise'] = float(not_noise.shape[0])
@@ -263,23 +287,25 @@ def run_voronoi_segmentation(parameters,
     for filename in os.listdir(input_dir):
 
         if filename.endswith('csv'):
-            print("voronoi clustering for file {}".format(filename))
+            print("voronoi clustering for file {0}".format(filename))
             locs_path = os.path.join(input_dir, filename)
             basename = os.path.splitext(filename)[0]
             output_path = os.path.join(output_dir, basename+'_voronoi.xlsx')
 
             roi_path = None
             if use_roi:
-                roi_zip_path = os.path.join(input_dir, basename + '_roiset.zip')
-                roi_file_path = os.path.join(input_dir, basename + '_roiset.roi')
+                roi_zip_path = os.path.join(input_dir, basename +
+                                            '_roiset.zip')
+                roi_file_path = os.path.join(input_dir,
+                                             basename + '_roiset.roi')
                 if os.path.exists(roi_zip_path):
                     roi_path = roi_zip_path
                 elif os.path.exists(roi_file_path):
                     roi_path = roi_file_path
                 else:
                     raise ValueError(("No ImageJ roi file exists -"
-                                     "you should put the file in the same directory"
-                                     "as the data"))
+                                      "you should put the file in the same"
+                                      "directory as the data"))
 
             vrois = voronoi_segmentation(locs_path,
                                          roi_path=roi_path,
@@ -296,17 +322,19 @@ def run_voronoi_segmentation(parameters,
                 v_locs = vroi['locs']
                 object_stats = collect_stats(v_locs, 'object_id')
                 cluster_stats = collect_stats(v_locs, 'cluster_id')
-                cluster_stats['percentage objects'] = object_stats['percentage objects']
+                cluster_stats['percentage objects'] = (
+                    object_stats['percentage objects'])
                 poc = (
-                    object_stats['objects_with_clusters'] / object_stats['not_noise']
+                    object_stats['objects_with_clusters'] /
+                    object_stats['not_noise']
                 )
                 cluster_stats['percentage_objects_with_clusters'] = poc
 
                 object_stats_df = pd.DataFrame(object_stats)
                 cluster_stats_df = pd.DataFrame(cluster_stats)
-                print(cluster_stats_df.head())
                 # remove unwanted columns
-                cluster_stats_df.drop(columns=['objects_with_clusters', 'not_noise'])
+                cluster_stats_df.drop(columns=['objects_with_clusters',
+                                               'not_noise'])
                 # reorder ready for saving
                 cluster_stats_df = cluster_stats_df[['area',
                                                      'perimeter',
@@ -322,7 +350,9 @@ def run_voronoi_segmentation(parameters,
                 if os.path.exists(output_path):
                     book = load_workbook(output_path)
                     writer.book = book
-                    writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                    writer.sheets = dict(
+                        (ws.title, ws) for ws in book.worksheets
+                    )
 
                 v_locs.to_excel(
                     writer,
@@ -345,36 +375,102 @@ def run_voronoi_segmentation(parameters,
             if len(roi_cluster_means) > 1:
                 stats[filename] = pd.concat(roi_cluster_means,
                                             axis=0,
-                                            keys=[s.name for s in roi_cluster_means])
+                                            keys=[s.name for s in
+                                                  roi_cluster_means])
             else:
                 stats[filename] = pd.DataFrame(roi_cluster_means[0]).T
 
-    print("stats: {0}".format(stats))
     fnames = list(stats.keys())
-    stats_path = os.path.join(output_dir, 'cluster_statistics.xlsx')
+    stats_path = os.path.join(output_dir, 'cluster_statistics_test.xlsx')
     for condition in conditions:
         condition_fnames = [fname for fname in fnames if condition in fname]
-        data = {'files': condition_fnames}
+        cluster_stats = []
         for cf in condition_fnames:
-            cluster_stats = stats[cf]
-            for column in cluster_stats:
-                if column != 'labels':
-                    data[column] = cluster_stats[column].mean()
+            cluster_stats.append(stats[cf])
 
+        cddf = pd.DataFrame(condition_fnames)
+        cddf.columns = ['filename']
+        csdf = pd.concat(cluster_stats, axis=0)
+        data = pd.concat([cddf, csdf.reset_index(drop=True)], axis=1)
         statistics.write_stats(stats_path, data, condition)
 
-if __name__=='__main__':
-    parameters = {}
-    parameters['pixel_size'] = 16.0 #nm
-    parameters['object_min_samples'] = 3
-    parameters['object_density_factor'] = 4.213
-    parameters['cluster_min_samples'] = 3
-    parameters['cluster_density_factor'] = 20
-    parameters['conditions'] = ['wtTNF', 'control']
-    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
-    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
-    parameters['data_source'] = 'thunderstorm'
-    run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
+
+def collate_stats_test(input_dir, conditions, output_dir):
+
+    stats = {}
+    for filename in os.listdir(input_dir):
+
+        if filename.endswith('xlsx'):
+            path = os.path.join(input_dir, filename)
+            locs = pd.read_excel(path, sheet_name='image localisations')
+            vrois = {'image': {'locs': locs}}
+
+            roi_cluster_means = []
+            for vr_id, vroi in vrois.items():
+                v_locs = vroi['locs']
+                object_stats = collect_stats(v_locs, 'object_id')
+                cluster_stats = collect_stats(v_locs, 'cluster_id')
+                cluster_stats['percentage objects'] = (
+                    object_stats['percentage objects']
+                )
+                poc = (
+                    object_stats['objects_with_clusters'] /
+                    object_stats['not_noise']
+                )
+                cluster_stats['percentage_objects_with_clusters'] = poc
+
+                object_stats_df = pd.DataFrame(object_stats)
+                cluster_stats_df = pd.DataFrame(cluster_stats)
+                print(cluster_stats_df.head())
+                # remove unwanted columns
+                cluster_stats_df.drop(columns=['objects_with_clusters',
+                                               'not_noise'])
+                # reorder ready for saving
+                cluster_stats_df = cluster_stats_df[['area',
+                                                     'occupancy',
+                                                     'percentage objects',
+                                                     'percentage clusters',
+                                                     'percentage_objects_with_clusters']]
+                # collect the mean values for each parameter in df to write
+                # to file later - list of pandas series
+                roi_cluster_means.append(cluster_stats_df.mean())
+
+            # turn list of series into a dataframe
+            if len(roi_cluster_means) > 1:
+                stats[filename] = pd.concat(roi_cluster_means,
+                                            axis=0,
+                                            keys=[s.name for s in
+                                                  roi_cluster_means])
+            else:
+                stats[filename] = pd.DataFrame(roi_cluster_means[0]).T
+
+    fnames = list(stats.keys())
+    stats_path = os.path.join(output_dir, 'cluster_statistics_test.xlsx')
+    for condition in conditions:
+        condition_fnames = [fname for fname in fnames if condition in fname]
+        cluster_stats = []
+        for cf in condition_fnames:
+            cluster_stats.append(stats[cf])
+
+        cddf = pd.DataFrame(condition_fnames)
+        cddf.columns = ['filename']
+        csdf = pd.concat(cluster_stats, axis=0)
+        data = pd.concat([cddf, csdf.reset_index(drop=True)], axis=1)
+        statistics.write_stats(stats_path, data, condition)
+
+
+if __name__ == '__main__':
+    # parameters = {}
+    # parameters['pixel_size'] = 16.0 #nm
+    # parameters['object_min_samples'] = 3
+    # parameters['object_density_factor'] = 4.213
+    # parameters['cluster_min_samples'] = 3
+    # parameters['cluster_density_factor'] = 20
+    # parameters['conditions'] = ['wtTNF', 'control']
+    # parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
+    # parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
+    # parameters['data_source'] = 'thunderstorm'
+    # run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
 
     # parameters = {}
     # parameters['pixel_size'] = 16.0 #nm
@@ -385,3 +481,6 @@ if __name__=='__main__':
     # parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\feb18 dSTORM\\processed"
     # parameters['data_source'] = 'thunderstorm'
     # run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
+    conditions = ['wtTNF', 'control']
+    folder = 'C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test\\out'
+    collate_stats_test(folder, conditions, folder)
