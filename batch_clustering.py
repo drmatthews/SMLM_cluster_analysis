@@ -254,14 +254,14 @@ def collect_stats(df, col):
     stats['labels'] = labels
     for m in labels:
         group = df[df[col] == m]
-        # points = group.as_matrix(['x [nm]', 'y [nm]'])
-        area.append(group['area'].sum())
-        # area.append(polygon_area(points))
-        # perimeter.append(polygon_perimeter(points))
+        points = group.as_matrix(['x [nm]', 'y [nm]'])
+        # area.append(group['area'].sum())
+        area.append(polygon_area(points))
+        perimeter.append(polygon_perimeter(points))
         occupancy.append(len(group.index))
 
     stats['area'] = area
-    # stats['perimeter'] = perimeter
+    stats['perimeter'] = perimeter
     stats['occupancy'] = occupancy
     stats['percentage {0}s'.format(col[:len(col) - 3])] = percentage
     stats['not_noise'] = float(not_noise.shape[0])
@@ -460,20 +460,20 @@ def collate_stats_test(input_dir, conditions, output_dir):
 
 
 if __name__ == '__main__':
-    # parameters = {}
-    # parameters['pixel_size'] = 16.0 #nm
-    # parameters['object_min_samples'] = 3
-    # parameters['object_density_factor'] = 4.213
-    # parameters['cluster_min_samples'] = 3
-    # parameters['cluster_density_factor'] = 20
-    # parameters['conditions'] = ['wtTNF', 'control']
-    # parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
-    # parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
-    # parameters['data_source'] = 'thunderstorm'
-    # run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
+    parameters = {}
+    parameters['pixel_size'] = 16.0 #nm
+    parameters['object_min_samples'] = 3
+    parameters['object_density_factor'] = 4.213
+    parameters['cluster_min_samples'] = 3
+    parameters['cluster_density_factor'] = 20
+    parameters['conditions'] = ['wtTNF', 'control']
+    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
+    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
+    parameters['data_source'] = 'thunderstorm'
+    run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
 
     # parameters = {}
-    # parameters['pixel_size'] = 16.0 #nm
+    # parameters['pixel_size'] = 16.0 #nm 
     # parameters['object_min_samples'] = 3
     # parameters['cluster_min_samples'] = 3
     # parameters['cluster_density_factor'] = 20
@@ -481,6 +481,4 @@ if __name__ == '__main__':
     # parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\feb18 dSTORM\\processed"
     # parameters['data_source'] = 'thunderstorm'
     # run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
-    conditions = ['wtTNF', 'control']
-    folder = 'C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\test\\out'
-    collate_stats_test(folder, conditions, folder)
+
