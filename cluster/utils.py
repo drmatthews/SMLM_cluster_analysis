@@ -569,14 +569,15 @@ def import_optics_clusters(path, sheetname=None):
     else:
         raise ValueError("Input data must be in Excel format")
         
-def import_voronoi_clusters(path, sheetname=None):
+def import_voronoi_clusters(path, sheetname=None, column='object_id'):
     if path.endswith('xlsx'):
-        cluster_sn = 'localisations'
+        sn = 'localisations'
         if sheetname:
-            cluster_sn = '{0} localisations'.format(sheetname)
+            sn = '{0} localisations'.format(sheetname)
 
-        clusters_df = pd.read_excel(path, sheet_name=cluster_sn)
-        return clusters_df
+        data = pd.read_excel(path, sheet_name=sn)
+        df = data[data[column] > -1]
+        return df
     else:
         raise ValueError("Input data must be in Excel format")
 

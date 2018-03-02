@@ -251,7 +251,7 @@ def collect_stats(df, col):
     perimeter = []
     occupancy = []
     stats = {}
-    stats['labels'] = labels
+    stats['label'] = labels
     for m in labels:
         group = df[df[col] == m]
         points = group.as_matrix(['x [nm]', 'y [nm]'])
@@ -280,6 +280,7 @@ def run_voronoi_segmentation(parameters,
     cdf = parameters['cluster_density_factor']
     cms = parameters['cluster_min_samples']
     conditions = parameters['conditions']
+    cluster_area_filter = parameters['cluster_area_filter']
     input_dir = parameters['input_dir']
     output_dir = parameters['output_dir']
 
@@ -332,20 +333,7 @@ def run_voronoi_segmentation(parameters,
 
                 object_stats_df = pd.DataFrame(object_stats)
                 cluster_stats_df = pd.DataFrame(cluster_stats)
-                # remove unwanted columns
-                cluster_stats_df.drop(columns=['objects_with_clusters',
-                                               'not_noise'])
-                # reorder ready for saving
-                cluster_stats_df = cluster_stats_df[['area',
-                                                     'perimeter',
-                                                     'occupancy',
-                                                     'percentage objects',
-                                                     'percentage clusters',
-                                                     'percentage_objects_with_clusters']]
-                # collect the mean values for each parameter in df to write
-                # to file later - list of pandas series
-                roi_cluster_means.append(cluster_stats_df.mean())
-
+                
                 writer = pd.ExcelWriter(output_path, engine='openpyxl')
                 if os.path.exists(output_path):
                     book = load_workbook(output_path)
@@ -359,17 +347,32 @@ def run_voronoi_segmentation(parameters,
                     sheet_name='{0} localisations'.format(vr_id),
                     index=False
                 )
-                object_stats_df.to_excel(
+                objects = object_stats_df[['label', 'area', 'perimeter', 'occupancy']]
+                objects.to_excel(
                     writer,
                     sheet_name='{0} object stats'.format(vr_id),
                     index=False
                 )
-                cluster_stats_df.to_excel(
+                clusters = cluster_stats_df[['label', 'area', 'perimeter', 'occupancy']]
+                clusters.to_excel(
                     writer,
                     sheet_name='{0} cluster stats'.format(vr_id),
                     index=False
                 )
                 writer.save()
+                
+                # apply area filter
+                cluster_stats_df = cluster_stats_df[cluster_stats_df['area'] > cluster_area_filter]
+                # reorder ready for saving
+                cluster_stats_df = cluster_stats_df[['area',
+                                                     'perimeter',
+                                                     'occupancy',
+                                                     'percentage objects',
+                                                     'percentage clusters',
+                                                     'percentage_objects_with_clusters']]
+                # collect the mean values for each parameter in df to write
+                # to file later - list of pandas series
+                roi_cluster_means.append(cluster_stats_df.mean())
 
             # turn list of series into a dataframe
             if len(roi_cluster_means) > 1:
@@ -466,9 +469,10 @@ if __name__ == '__main__':
     parameters['object_density_factor'] = 4.213
     parameters['cluster_min_samples'] = 3
     parameters['cluster_density_factor'] = 20
-    parameters['conditions'] = ['wtTNF', 'control']
-    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk"
-    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\atto647n pre-hawk\\processed\\monte_carlo"
+    parameters['conditions'] = ['wtTNF', 'mutTNF', 'control']
+    parameters['cluster_area_filter'] = 30.0
+    parameters['input_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\dSTORM_third_run"
+    parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\dSTORM_third_run\\processed"
     parameters['data_source'] = 'thunderstorm'
     run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
 
