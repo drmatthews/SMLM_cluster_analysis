@@ -5,8 +5,8 @@ from cluster import utils
 from read_roi import read_roi_file
 from read_roi import read_roi_zip
 
-root_dir = 'C:\\Users\\NIC ADMIN\\Documents\\dSTORM_third_run\\'
-path = root_dir + 'processed\\run03_control_voronoi.xlsx'
+root_dir = 'C:\\Users\\Daniel\\Documents\\Image processing\\Penny\\dstorm_180301\\'
+path = root_dir + 'processed\\run14 wtTNF_voronoi.xlsx'
 obj_locs = utils.import_voronoi_clusters(path, sheetname='image')
 clust_locs = utils.import_voronoi_clusters(path, sheetname='image', column='cluster_id')
 obj_xy = obj_locs.as_matrix(['x [nm]', 'y [nm]'])
@@ -14,8 +14,12 @@ clust_xy = clust_locs.as_matrix(['x [nm]', 'y [nm]'])
 fig = plt.figure()
 plt.plot(obj_xy[:, 0], obj_xy[:, 1], 'ro', alpha=.5)
 # plt.plot(clust_xy[:, 0], clust_xy[:, 1], 'bo', alpha=.5)
-utils.plot_cluster_polygons(obj_locs, figure=fig, cluster_column='object_id')
-utils.plot_cluster_polygons(clust_locs, figure=fig, cluster_column='cluster_id', patch_colour='#5ff442')
+# utils.plot_cluster_polygons(obj_locs, figure=fig, cluster_column='object_id')
+utils.plot_cluster_polygons(clust_locs,
+                            figure=fig,
+                            area_filter=30.0,
+                            cluster_column='cluster_id',
+                            patch_colour='#5ff442')
 plt.show()
 # print(cluster_list[0].x)
 

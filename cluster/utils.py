@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
+from scipy.spatial import voronoi_plot_2d
 from sklearn.cluster import DBSCAN
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KDTree
@@ -17,6 +18,8 @@ from shapely.geometry import Polygon, MultiPoint, MultiLineString
 from shapely.ops import cascaded_union, polygonize
 from descartes import PolygonPatch
 from matplotlib import pylab as plt
+from matplotlib.collections import LineCollection
+from matplotlib import colors as mcolors
 # import the imagej roi
 from read_roi import read_roi_file
 from read_roi import read_roi_zip
@@ -158,12 +161,14 @@ class ClusterList(object):
         ext = os.path.splitext(path)[1]
         if ('xlsx' in ext):
             if self.clusters:
-                
+
                 writer = pd.ExcelWriter(path, engine='openpyxl')
                 if os.path.exists(path):
                     book = load_workbook(path)
                     writer.book = book
-                    writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                    writer.sheets = dict(
+                        (ws.title, ws) for ws in book.worksheets
+                    )
 
                 coords = []
                 stats = []
@@ -204,7 +209,7 @@ class ClusterList(object):
                     sheet_name='{} convex hulls'.format(sheetname),
                     index=False
                 )
-                
+
                 if self.noise is not None:
                     noise_df = pd.DataFrame(self.noise)
                     noise_df.columns = ['x [nm]', 'y [nm]']
@@ -230,7 +235,7 @@ def optics_clustering(input_coords,
     noise = {}
     for roi in input_coords.keys():
         xy = input_coords[roi]
-        
+
         if xy.shape[0] == 0:
             print("no coords in roi")
             continue
@@ -263,7 +268,7 @@ def optics_clustering(input_coords,
                 noise_ = xy[class_member_mask & ~core_samples_mask]
                 cluster_list.noise = noise_
                 noise[roi] = noise_
-            
+
     return (optics_clusters, noise)
 
 
@@ -357,14 +362,14 @@ def plot_optics_clusters(cluster_list,
             y = c.y
 
         plt.plot(x, y, 'o',
-            markerfacecolor=color,
-            markeredgecolor='k',
-            markersize=cluster_marker_size,
-            alpha=0.5)
+                 markerfacecolor=color,
+                 markeredgecolor='k',
+                 markersize=cluster_marker_size,
+                 alpha=0.5)
 
         plt.annotate('%s' % str(c.cluster_id),
-            xy=(c.center[0:2]),
-            xycoords='data')
+                     xy=(c.center[0:2]),
+                     xycoords='data')
 
     # plot noise
     if noise is not None:
@@ -403,10 +408,11 @@ def plot_voronoi_clusters(v, vor, save=False, filename=None, show_plot=True):
     if show_plot:
         plt.show()
 
+
 def plot_polygon(polygon, figure=None):
     if figure is None:
         from matplotlib import pylab as plt
-        fig = plt.figure(figsize=(10,10))
+        fig = plt.figure(figsize=(10, 10))
     else:
         fig = figure
     ax = fig.add_subplot(111)
@@ -446,8 +452,8 @@ def alpha_shape(points, alpha):
             # already added
             return
 
-        edges.add( (i, j) )
-        edge_points.append(coords[ [i, j] ])
+        edges.add((i, j))
+        edge_points.append(coords[[i, j]])
 
     # coords = np.array([point.coords[0] for point in points])
     coords = points
@@ -471,7 +477,7 @@ def alpha_shape(points, alpha):
         area = math.sqrt(s*(s-a)*(s-b)*(s-c))
         circum_r = a*b*c/(4.0*area)
         # Here's the radius filter.
-        #print circum_r
+        # print circum_r
         if circum_r < 1.0/alpha:
             add_edge(edges, edge_points, coords, ia, ib)
             add_edge(edges, edge_points, coords, ib, ic)
@@ -486,28 +492,39 @@ def plot_voronoi_diagram(vor, cluster_column='lk', locs_df=None):
 
     if locs_df is not None:
         cluster_locs_df = locs_df.copy()
-        cluster_locs_df = cluster_locs_df[cluster_locs_df[cluster_column] != -1]
+        cluster_locs_df = (
+            cluster_locs_df[cluster_locs_df[cluster_column] != -1]
+        )
         labels = cluster_locs_df[cluster_column].unique()
+
         ax = v2d.axes[0]
+        # figure = plt.figure()
+        # ax = figure.add_subplot(111)
         for m in labels:
             cluster_points = (
                 cluster_locs_df[cluster_locs_df[cluster_column] == m].
                 as_matrix(columns=['x [nm]', 'y [nm]'])
             )
-
             concave_hull, edge_points = (
-                    alpha_shape(cluster_points, alpha=0.01))
+                    alpha_shape(cluster_points, alpha=0.00001))
             patch = PolygonPatch(concave_hull, fc='#999999',
                                  ec='#000000', fill=True,
                                  zorder=-1)
             ax.add_patch(patch)
-            ax.plot(cluster_points[:, 0], cluster_points[:, 1], 'rx')
-        #     lines = LineCollection(edge_points,color=mcolors.to_rgba('b'),linestyle='solid')
-        #     ax.add_collection(lines)
 
+            ax.plot(cluster_points[:, 0], cluster_points[:, 1], 'rx')
+            # lines = LineCollection(
+            #    edge_points,color=mcolors.to_rgba('b'),linestyle='solid')
+            # ax.add_collection(lines)
     return v2d
 
-def plot_cluster_polygons(locs, figure=None, cluster_column='lk', patch_colour='#303F9F'):
+
+def plot_cluster_polygons(locs,
+                          figure=None,
+                          cluster_column='lk',
+                          area_filter=0.0,
+                          patch_colour='#303F9F'):
+
     if cluster_column not in locs:
         raise ValueError("Run clustering first")
 
@@ -528,10 +545,11 @@ def plot_cluster_polygons(locs, figure=None, cluster_column='lk', patch_colour='
                 alpha_shape(points, alpha=0.01)
         )
         if 'GeometryCollection' not in concave_hull.geom_type:
-            patch = PolygonPatch(concave_hull, fc=patch_colour,
-                                 ec='#000000', fill=True,
-                                 zorder=-1)
-            ax.add_patch(patch)
+            if concave_hull.area > area_filter:
+                patch = PolygonPatch(concave_hull, fc=patch_colour,
+                                     ec='#000000', fill=True,
+                                     zorder=-1)
+                ax.add_patch(patch)
         plt.plot(points[:, 0], points[:, 1], 'bo', alpha=.5)
     return figure
 
@@ -539,16 +557,16 @@ def plot_cluster_polygons(locs, figure=None, cluster_column='lk', patch_colour='
 def polygon_area(points):
     concave_hull, edge_points = (
             alpha_shape(points, alpha=0.01)
-    )        
+    )
     return concave_hull.area
-    
+
 
 def polygon_perimeter(points):
     concave_hull, edge_points = (
             alpha_shape(points, alpha=0.01)
-    )        
+    )
     return concave_hull.length
-        
+
 
 def import_optics_clusters(path, sheetname=None):
     if path.endswith('xlsx'):
@@ -556,7 +574,7 @@ def import_optics_clusters(path, sheetname=None):
         noise_sn = 'noise'
         if sheetname:
             cluster_sn = '{0} cluster coordinates'.format(sheetname)
-            noise_sn = '{0} noise'.format(sheetname)  
+            noise_sn = '{0} noise'.format(sheetname)
         clusters_df = pd.read_excel(path, sheet_name=cluster_sn)
         noise_df = pd.read_excel(path, sheet_name=noise_sn)
         clusters = df.groupby('cluster_id')
@@ -568,7 +586,8 @@ def import_optics_clusters(path, sheetname=None):
         return cluster_list
     else:
         raise ValueError("Input data must be in Excel format")
-        
+
+
 def import_voronoi_clusters(path, sheetname=None, column='object_id'):
     if path.endswith('xlsx'):
         sn = 'localisations'

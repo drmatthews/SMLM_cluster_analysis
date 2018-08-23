@@ -50,7 +50,6 @@ def build_voronoi(locs_df,
     if not isinstance(locs_df, pd.DataFrame):
         raise ValueError("only works with Pandas DataFrames created from"
                          "localisations exported from Thunderstorm")
-
     locs_df['area'] = np.nan
     n_locs = len(locs_df.index)
     if num_locs:
@@ -103,7 +102,7 @@ def voronoi_clustering(vor_data,
                        min_size,
                        cluster_column='lk',
                        num_locs=None):
-
+    print(type(vor_data))
     if not isinstance(vor_data, dict):
         raise ValueError(("You must pass a dictionary containing voronoi"
                           "polygons and a Pandas DataFrame of localisations"))
@@ -119,8 +118,9 @@ def voronoi_clustering(vor_data,
         print("ave density: {}".format(ave_density))
         if cluster_column not in locs_df:
             locs_df[cluster_column] = -1
+
         min_density = density_factor * ave_density
-        visited = np.zeros((n_locs), dtype = np.int32)
+        visited = np.zeros((n_locs), dtype=np.int32)
 
         neighbors, neighbors_counts = polygon_neighbors(vor, n_locs)
 
@@ -189,6 +189,7 @@ def voronoi_montecarlo(roi,
     locs_df = vor['locs']
 
     z = norm.ppf(1 - float(100 - confidence) * 0.01 / 2.0)
+    print(z)
     # the following will work as long as roi['type'] == 'rectangle'
     w = roi['width']
     h = roi['height']
@@ -231,12 +232,19 @@ def voronoi_montecarlo(roi,
                 locs_df, density_factor, min_size, max_area=inters[0])
 
     if show_plot:
-        plt.figure()
-        plt.plot(centers, counts, 'k-')
-        plt.plot(centers, mean_mc_counts, 'r-')
-        plt.plot(centers, upper_mc_counts, 'b-')
-        plt.plot(centers, lower_mc_counts, 'b-')
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        plt.plot(centers, counts, 'k-', label='Data')
+        plt.plot(centers, mean_mc_counts, 'r-', label='MC mean')
+        plt.plot(centers, upper_mc_counts, 'b-', label='MC mean + 2*std')
+        plt.plot(centers, lower_mc_counts, 'b-', label='MC mean - 2*std')
         plt.plot(inters[0], inters[1], 'g*')
+        ax.set_xlim([0, np.max(centers)])
+        ax.set_ylim([0, np.max(counts) + 0.1 * np.max(counts)])
+        ax.tick_params(labelsize='large')
+        plt.xlabel('Polygon area [nm^2]', fontsize=18)
+        plt.ylabel('Counts', fontsize=18)
+        plt.legend()
         plt.show()
 
     roi['locs'] = locs_df
@@ -256,9 +264,8 @@ def voronoi(locs_path,
             show_plot=True,
             verbose=True):
 
-    if locs_path.endswith('csv'): # Thunderstorm
+    if locs_path.endswith('csv'):  # Thunderstorm
         locs_df = pd.read_csv(locs_path)
-        locs_density = (locs_df)
 
         if roi_path:
             if roi_path.endswith('zip'):
@@ -272,17 +279,20 @@ def voronoi(locs_path,
                                  "filename as the localisations."))
         else:
             # use all the localisations but mimic the rois dict data structure
+            dx = locs_df['x [nm]'].max() - locs_df['x [nm]'].min()
+            dy = locs_df['y [nm]'].max() - locs_df['y [nm]'].min()
             rois = {'image': {'locs': locs_df, 'width': dx, 'height': dy}}
 
         for roi_id, roi in rois.items():
-            vor = build_voronoi(rois[roi_id]['locs'], show_plot=show_plot, verbose=verbose)
-            locs_df = voronoi_clustering(vor['locs'], density_factor, min_size)
-
+            vor = build_voronoi(
+                rois[roi_id]['locs'], show_plot=False, verbose=verbose
+            )
+            clusters = voronoi_clustering(vor, density_factor, min_size)
             if show_plot:
                 plot_voronoi_diagram(
-                        vor['voronoi'], plot_clusters=True, locs_df=locs_df)
+                        clusters['voronoi'], locs_df=clusters['locs'])
 
-        return locs_df
+        return clusters
     else:
         raise ValueError("This can only handle data from Thunderstorm at present")
 
@@ -333,7 +343,7 @@ def voronoi_segmentation(locs_path,
         for roi_id, roi in rois.items():
             print("Monte Carlo simulation in ROI {0}".format(roi_id))
             # pass the locs DataFrame and roi dict to voronoi_montecarlo
-            rmc = voronoi_montecarlo(roi, show_plot=False)
+            rmc = voronoi_montecarlo(roi, show_plot=show_plot)
             intersection += rmc['intersection']
 
         # always use the average intersection
@@ -416,9 +426,12 @@ def voronoi_segmentation(locs_path,
         roi_locs[['object_id', 'cluster_id']] = roi_locs[['object_id', 'cluster_id']].fillna(value=-1)
         roi['locs'] = roi_locs
     return rois
+
 #
 #  helpers
 #
+
+
 def roi_coords(locs, rois, pixel_size):
     for roi_id, roi in rois.items():
         for k, v in roi.items():
@@ -440,8 +453,8 @@ def roi_locs(locs, roi):
 def polygon_neighbors(vor, n_locs):
     # Record the neighbors of each point.
     max_neighbors = 40
-    neighbors = np.zeros((n_locs, max_neighbors), dtype = np.int32) - 1
-    neighbors_counts = np.zeros((n_locs), dtype = np.int32)
+    neighbors = np.zeros((n_locs, max_neighbors), dtype=np.int32) - 1
+    neighbors_counts = np.zeros((n_locs), dtype=np.int32)
     print("n_locs: {}".format(n_locs))
     for ridge_p in vor.ridge_points:
 
@@ -463,6 +476,7 @@ def polygon_neighbors(vor, n_locs):
 
     return (neighbors, neighbors_counts)
 
+
 def fov(locs):
     x_min = locs['x [nm]'].min()
     x_max = locs['x [nm]'].max()
@@ -470,15 +484,16 @@ def fov(locs):
     y_max = locs['y [nm]'].max()
     x_range = x_max - x_min
     y_range = y_max - y_min
-
     fovx = math.ceil(x_range/1000.0) * 1000
     fovy = math.ceil(y_range/1000.0) * 1000
     return (fovx, fovy)
+
 
 def density(locs):
     im_fov = max(fov(locs))
     n_locs = locs.index.max() + 1
     return n_locs / (im_fov * im_fov)
+
 
 def intersection(x1, y1, x2, y2):
 #      y = a*x + b

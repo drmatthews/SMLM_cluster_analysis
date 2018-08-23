@@ -272,7 +272,8 @@ def collect_stats(df, col):
 def run_voronoi_segmentation(parameters,
                              use_roi=False,
                              segment_rois=False,
-                             monte_carlo=True):
+                             monte_carlo=True,
+                             show_plot=False):
 
     # parameters
     odf = parameters['object_density_factor']
@@ -316,7 +317,7 @@ def run_voronoi_segmentation(parameters,
                                          object_min_samples=oms,
                                          cluster_density_factor=cdf,
                                          cluster_min_samples=cms,
-                                         show_plot=False)
+                                         show_plot=show_plot)
 
             roi_cluster_means = []
             for vr_id, vroi in vrois.items():
@@ -333,7 +334,7 @@ def run_voronoi_segmentation(parameters,
 
                 object_stats_df = pd.DataFrame(object_stats)
                 cluster_stats_df = pd.DataFrame(cluster_stats)
-                
+
                 writer = pd.ExcelWriter(output_path, engine='openpyxl')
                 if os.path.exists(output_path):
                     book = load_workbook(output_path)
@@ -360,7 +361,7 @@ def run_voronoi_segmentation(parameters,
                     index=False
                 )
                 writer.save()
-                
+
                 # apply area filter
                 cluster_stats_df = cluster_stats_df[cluster_stats_df['area'] > cluster_area_filter]
                 # reorder ready for saving
@@ -477,7 +478,7 @@ if __name__ == '__main__':
     run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
 
     # parameters = {}
-    # parameters['pixel_size'] = 16.0 #nm 
+    # parameters['pixel_size'] = 16.0 #nm
     # parameters['object_min_samples'] = 3
     # parameters['cluster_min_samples'] = 3
     # parameters['cluster_density_factor'] = 20
@@ -485,4 +486,3 @@ if __name__ == '__main__':
     # parameters['output_dir'] = "C:\\Users\\NIC ADMIN\\Documents\\feb18 dSTORM\\processed"
     # parameters['data_source'] = 'thunderstorm'
     # run_voronoi_segmentation(parameters, use_roi=False, segment_rois=False)
-

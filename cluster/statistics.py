@@ -3,9 +3,17 @@
 from __future__ import print_function
 
 import os
+from os import listdir
+from os.path import isfile, join
 import numpy as np
 import pandas as pd
-from .utils import *
+from openpyxl import load_workbook
+from read_roi import read_roi_file
+from read_roi import read_roi_zip
+
+from .utils import (kdtree_nn,
+                    polygon_area,
+                    polygon_perimeter)
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -66,7 +74,7 @@ def cluster_near_neighbours(out_dir, dataset_name, dataset_type):
                     os.path.join(out_dir, filename),
                     sheet_name='cluster coordinates')
 
-                nn = utils.kdtree_nn(
+                nn = kdtree_nn(
                     df.as_matrix(columns=['x [nm]', 'y [nm]']))
                 nn_list.append(nn)
 
@@ -74,6 +82,7 @@ def cluster_near_neighbours(out_dir, dataset_name, dataset_type):
     nn_df.columns = ['Distance [nm]']
 
     return nn_df
+
 
 def percentage_of_total(folder,
                         sheet_name,
@@ -145,3 +154,95 @@ def mean_near_neighbour_distance(folder, dataset_name, sheet_name):
                 cluster_mean.append(c['nn distance [nm]'].mean())
             mean.append(sum(cluster_mean) / len(cluster_mean))
     return np.array(mean)
+
+
+def collect_stats(df, col):
+    total = float(df.shape[0])
+    not_noise = df[df[col] != -1]
+    percentage = float(not_noise.shape[0]) / total
+    objects_with_clusters = (
+        float(df[(df['object_id'] != -1) & (df['cluster_id'] != -1)].shape[0])
+    )
+    labels = not_noise[col].unique()
+    area = []
+    perimeter = []
+    occupancy = []
+    stats = {}
+    stats['label'] = labels
+    for m in labels:
+        group = df[df[col] == m]
+        points = group.as_matrix(['x [nm]', 'y [nm]'])
+        # area.append(group['area'].sum())
+        area.append(polygon_area(points))
+        perimeter.append(polygon_perimeter(points))
+        occupancy.append(len(group.index))
+
+    stats['area'] = area
+    stats['perimeter'] = perimeter
+    stats['occupancy'] = occupancy
+    stats['percentage {0}s'.format(col[:len(col) - 3])] = percentage
+    stats['not_noise'] = float(not_noise.shape[0])
+    stats['objects_with_clusters'] = objects_with_clusters
+    return stats
+
+
+def import_cluster_stats(path, sheetname=None):
+    if path.endswith('xlsx'):
+        sn = 'image cluster stats'
+        if sheetname:
+            sn = '{0} cluster stats'.format(sheetname)
+        try:
+            df = pd.read_excel(path, sheet_name=sn)
+            return df
+        except ValueError:
+            sn = 'image cluster stats'
+            df = pd.read_excel(path, sheet_name=sn)
+            return df
+        except ValueError:
+            return None
+    else:
+        raise ValueError("Input data must be in Excel format")
+
+
+def batch_stats(folder, conditions, use_roi=False):
+
+    for filename in os.listdir(folder):
+        if filename.endswith('xlsx'):
+            stats_path = os.path.join(folder, filename)
+            basename = os.path.splitext(filename)[0]
+
+            if use_roi:
+                roi_zip_path = os.path.join(folder, basename +
+                                            '_roiset.zip')
+                roi_file_path = os.path.join(folder,
+                                             basename + '_roiset.roi')
+                if os.path.exists(roi_zip_path):
+                    rois = read_roi_zip(roi_zip_path)
+                elif os.path.exists(roi_file_path):
+                    rois = read_roi_file(roi_file_path)
+                else:
+                    raise ValueError(("No ImageJ roi file exists -"
+                                      "you should put the file in the same"
+                                      "directory as the data"))
+
+                stats = []
+                for roi in rois.keys():
+                    stats.append(import_cluster_stats(stats_path),
+                                 sheetname=roi)
+                stats_df = pd.concat(stats)
+            else:
+                stats_df = import_cluster_stats(stats_path)
+
+            fnames = [f for f in listdir(folder) if isfile(join(folder, f))]
+            outpath = os.path.join(folder, 'cluster_statistics_test.xlsx')
+            for condition in conditions:
+                condition_fnames = [fname for fname in fnames if condition in fname]
+                cluster_stats = []
+                for cf in condition_fnames:
+                    cluster_stats.append(stats[cf])
+
+                cddf = pd.DataFrame(condition_fnames)
+                cddf.columns = ['filename']
+                csdf = pd.concat(cluster_stats, axis=0)
+                data = pd.concat([cddf, csdf.reset_index(drop=True)], axis=1)
+                statistics.write_stats(stats_path, data, condition)
